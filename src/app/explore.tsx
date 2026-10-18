@@ -1,180 +1,347 @@
-import { Image } from 'expo-image';
-import { SymbolView } from 'expo-symbols';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  createCategory,
+  deleteCategory,
+  getCategories,
+  getCourses,
+  updateCategory,
+} from "../api/apiService";
 
-import { ExternalLink } from '@/components/external-link';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Collapsible } from '@/components/ui/collapsible';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+interface Category {
+  id: string;
+  name: string;
+  description?: string;
+}
 
-export default function TabTwoScreen() {
-  const safeAreaInsets = useSafeAreaInsets();
-  const insets = {
-    ...safeAreaInsets,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
+interface Course {
+  id: string;
+  categoryId: string;
+}
+
+export default function CategoryScreen() {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // State cho Modal Thêm / Sửa
+  const [modalVisible, setModalVisible] = useState<boolean>(false);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [name, setName] = useState<string>("");
+  const [description, setDescription] = useState<string>("");
+  const [submitting, setSubmitting] = useState<boolean>(false);
+
+  const fetchCategoriesData = async () => {
+    try {
+      setLoading(true);
+      const data = await getCategories();
+      setCategories(data);
+    } catch (error) {
+      Alert.alert("Lỗi", "Không thể tải danh sách danh mục");
+    } finally {
+      setLoading(false);
+    }
   };
-  const theme = useTheme();
 
-  const contentPlatformStyle = Platform.select({
-    android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-      paddingBottom: insets.bottom,
-    },
-    web: {
-      paddingTop: Spacing.six,
-      paddingBottom: Spacing.four,
-    },
-  });
+  useFocusEffect(
+    useCallback(() => {
+      fetchCategoriesData();
+    }, []),
+  );
+
+  // Mở modal thêm mới
+  const handleOpenAddModal = () => {
+    setEditingCategory(null);
+    setName("");
+    setDescription("");
+    setModalVisible(true);
+  };
+
+  // Mở modal sửa
+  const handleOpenEditModal = (cat: Category) => {
+    setEditingCategory(cat);
+    setName(cat.name);
+    setDescription(cat.description || "");
+    setModalVisible(true);
+  };
+
+  // Lưu thông tin (Thêm hoặc Sửa)
+  const handleSaveCategory = async () => {
+    if (!name.trim()) {
+      Alert.alert("Lỗi", "Tên danh mục không được để trống");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      if (editingCategory) {
+        await updateCategory(editingCategory.id, {
+          name: name.trim(),
+          description: description.trim(),
+        });
+      } else {
+        await createCategory({
+          name: name.trim(),
+          description: description.trim(),
+        });
+      }
+      setModalVisible(false);
+      fetchCategoriesData();
+    } catch (error) {
+      Alert.alert("Lỗi", "Không thể lưu danh mục");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Xóa danh mục kèm kiểm tra ràng buộc khóa học
+  const handleDeleteCategory = async (cat: Category) => {
+    try {
+      // 1. Lấy danh sách toàn bộ khóa học để kiểm tra quan hệ
+      const courses: Course[] = await getCourses();
+      const hasCourses = courses.some((course) => course.categoryId === cat.id);
+
+      // 2. Chặn xóa nếu danh mục đang chứa khóa học
+      if (hasCourses) {
+        Alert.alert(
+          "Không thể xóa",
+          `Danh mục "${cat.name}" đang có khóa học liên kết. Bạn cần xóa hoặc chuyển khóa học trước khi xóa danh mục này!`,
+        );
+        return;
+      }
+
+      // 3. Xác nhận xóa nếu không có khóa học nào thuộc danh mục
+      Alert.alert(
+        "Xác nhận xóa",
+        `Bạn có chắc muốn xóa danh mục "${cat.name}"?`,
+        [
+          { text: "Hủy", style: "cancel" },
+          {
+            text: "Xóa",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await deleteCategory(cat.id);
+                fetchCategoriesData();
+              } catch (error) {
+                Alert.alert("Lỗi", "Không thể xóa danh mục");
+              }
+            },
+          },
+        ],
+      );
+    } catch (error) {
+      Alert.alert("Lỗi", "Không thể kiểm tra dữ liệu khóa học");
+    }
+  };
 
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-      <ThemedView style={styles.container}>
-        <ThemedView style={styles.titleContainer}>
-          <ThemedText type="subtitle">Explore</ThemedText>
-          <ThemedText style={styles.centerText} themeColor="textSecondary">
-            This starter app includes example{'\n'}code to help you get started.
-          </ThemedText>
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        {/* Nút Thêm danh mục */}
+        <TouchableOpacity style={styles.addBtn} onPress={handleOpenAddModal}>
+          <Ionicons name="add-circle-outline" size={20} color="#fff" />
+          <Text style={styles.addBtnText}>Thêm danh mục mới</Text>
+        </TouchableOpacity>
 
-          <ExternalLink href="https://docs.expo.dev" asChild>
-            <Pressable style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedView type="backgroundElement" style={styles.linkButton}>
-                <ThemedText type="link">Expo documentation</ThemedText>
-                <SymbolView
-                  tintColor={theme.text}
-                  name={{ ios: 'arrow.up.right.square', android: 'link', web: 'link' }}
-                  size={12}
-                />
-              </ThemedView>
-            </Pressable>
-          </ExternalLink>
-        </ThemedView>
+        {loading ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color="#007AFF" />
+          </View>
+        ) : (
+          <FlatList
+            data={categories}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <View style={styles.card}>
+                <View style={styles.catInfo}>
+                  <Text style={styles.catName}>{item.name}</Text>
+                  <Text style={styles.catDesc}>
+                    {item.description || "Không có mô tả"}
+                  </Text>
+                </View>
+                <View style={styles.actions}>
+                  <TouchableOpacity
+                    style={styles.editBtn}
+                    onPress={() => handleOpenEditModal(item)}
+                  >
+                    <Ionicons name="pencil-outline" size={18} color="#007AFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deleteBtn}
+                    onPress={() => handleDeleteCategory(item)}
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#dc3545" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            ListEmptyComponent={
+              <View style={styles.centerContainer}>
+                <Text style={styles.emptyText}>Chưa có danh mục nào.</Text>
+              </View>
+            }
+          />
+        )}
 
-        <ThemedView style={styles.sectionsWrapper}>
-          <Collapsible title="File-based routing">
-            <ThemedText type="small">
-              This app has two screens: <ThemedText type="code">src/app/index.tsx</ThemedText> and{' '}
-              <ThemedText type="code">src/app/explore.tsx</ThemedText>
-            </ThemedText>
-            <ThemedText type="small">
-              The layout file in <ThemedText type="code">src/app/_layout.tsx</ThemedText> sets up
-              the tab navigator.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/router/introduction">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+        {/* Modal Thêm / Sửa Danh mục */}
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={modalVisible}
+          onRequestClose={() => setModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>
+                {editingCategory ? "Sửa Danh mục" : "Thêm Danh mục"}
+              </Text>
 
-          <Collapsible title="Android, iOS, and web support">
-            <ThemedView type="backgroundElement" style={styles.collapsibleContent}>
-              <ThemedText type="small">
-                You can open this project on Android, iOS, and the web. To open the web version,
-                press <ThemedText type="smallBold">w</ThemedText> in the terminal running this
-                project.
-              </ThemedText>
-              <Image
-                source={require('@/assets/images/tutorial-web.png')}
-                style={styles.imageTutorial}
+              <TextInput
+                style={styles.input}
+                placeholder="Tên danh mục *"
+                value={name}
+                onChangeText={setName}
               />
-            </ThemedView>
-          </Collapsible>
 
-          <Collapsible title="Images">
-            <ThemedText type="small">
-              For static images, you can use the <ThemedText type="code">@2x</ThemedText> and{' '}
-              <ThemedText type="code">@3x</ThemedText> suffixes to provide files for different
-              screen densities.
-            </ThemedText>
-            <Image source={require('@/assets/images/react-logo.png')} style={styles.imageReact} />
-            <ExternalLink href="https://reactnative.dev/docs/images">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Mô tả danh mục"
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={3}
+              />
 
-          <Collapsible title="Light and dark mode components">
-            <ThemedText type="small">
-              This template has light and dark mode support. The{' '}
-              <ThemedText type="code">useColorScheme()</ThemedText> hook lets you inspect what the
-              user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.cancelBtn]}
+                  onPress={() => setModalVisible(false)}
+                  disabled={submitting}
+                >
+                  <Text style={styles.cancelBtnText}>Hủy</Text>
+                </TouchableOpacity>
 
-          <Collapsible title="Animations">
-            <ThemedText type="small">
-              This template includes an example of an animated component. The{' '}
-              <ThemedText type="code">src/components/ui/collapsible.tsx</ThemedText> component uses
-              the powerful <ThemedText type="code">react-native-reanimated</ThemedText> library to
-              animate opening this hint.
-            </ThemedText>
-          </Collapsible>
-        </ThemedView>
-        {Platform.OS === 'web' && <WebBadge />}
-      </ThemedView>
-    </ScrollView>
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.saveBtn]}
+                  onPress={handleSaveCategory}
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.saveBtnText}>Lưu</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
+  safeArea: { flex: 1, backgroundColor: "#f8f9fa" },
+  container: { flex: 1, padding: 16 },
+  addBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#28a745",
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 6,
+  },
+  addBtnText: { color: "#fff", fontWeight: "bold", fontSize: 15 },
+  card: {
+    flexDirection: "row",
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 14,
+    marginBottom: 10,
+    alignItems: "center",
+    justifyContent: "space-between",
+    elevation: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  catInfo: { flex: 1, paddingRight: 10 },
+  catName: { fontSize: 16, fontWeight: "bold", color: "#212529" },
+  catDesc: { fontSize: 13, color: "#6c757d", marginTop: 3 },
+  actions: { flexDirection: "row", gap: 10 },
+  editBtn: {
+    padding: 8,
+    backgroundColor: "#e7f3ff",
+    borderRadius: 6,
+  },
+  deleteBtn: {
+    padding: 8,
+    backgroundColor: "#ffebe6",
+    borderRadius: 6,
+  },
+  centerContainer: {
     flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 40,
   },
-  contentContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  emptyText: { color: "#868e96", fontSize: 14 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
   },
-  container: {
-    maxWidth: MaxContentWidth,
-    flexGrow: 1,
+  modalContent: {
+    width: "100%",
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    padding: 20,
   },
-  titleContainer: {
-    gap: Spacing.three,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.six,
+  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 14 },
+  input: {
+    borderWidth: 1,
+    borderColor: "#ced4da",
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 12,
+    fontSize: 14,
   },
-  centerText: {
-    textAlign: 'center',
+  textArea: {
+    height: 80,
+    textAlignVertical: "top",
   },
-  pressed: {
-    opacity: 0.7,
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 8,
   },
-  linkButton: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
-    justifyContent: 'center',
-    gap: Spacing.one,
-    alignItems: 'center',
+  modalBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 6,
   },
-  sectionsWrapper: {
-    gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
-  },
-  collapsibleContent: {
-    alignItems: 'center',
-  },
-  imageTutorial: {
-    width: '100%',
-    aspectRatio: 296 / 171,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
-  },
-  imageReact: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
-  },
+  cancelBtn: { backgroundColor: "#e9ecef" },
+  cancelBtnText: { color: "#495057", fontWeight: "600" },
+  saveBtn: { backgroundColor: "#007AFF" },
+  saveBtnText: { color: "#fff", fontWeight: "bold" },
 });
