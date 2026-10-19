@@ -3,7 +3,7 @@ Hướng dẫn chạy ứng dụng:
 1. Mở mockAPI, chọn 1 mục và copy đường link của mockAPI
 2. Vào VSCode, mở terminal và chạy lệnh npx expo start hoặc npx expo start -c
 3. Bấm ? sẽ hiển thị danh sách, sau đó bấm a để chạy Android (phải tải Android Studio và tải máy ảo trước)
-   Link google drive:
+   Link google drive: https://drive.google.com/drive/folders/1zYHEcVPFd3zJDd_r4F9Z5hTPaPSsJISZ?hl=vi
    Link MockAPI: https://6ad3602e59dd78397bbba57d.mockapi.io
    Link ảnh và video cùng 1 danh mục (thứ tự ảnh và video là 1 cặp đại diện cho 1 khóa học):
    Đại cương:
